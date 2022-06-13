@@ -1,4 +1,4 @@
-int verification3Parser (TString testDataFilePath = "m115-test3-1.txt") {
+string verification3Parser (TString testDataFilePath = "m115-test3-1.txt") {
 
 	// These are some setup values
 	
@@ -28,7 +28,9 @@ int verification3Parser (TString testDataFilePath = "m115-test3-1.txt") {
 	Int_t		numberOfChamber 	= 0;		
 	Int_t		numberOfWire	  	= 0;		
 	Int_t		numberOfRep		  	= 0;		
-	Int_t		binNumber		  	= 1;		
+	Int_t		binNumber		  	= 1;
+	
+	TFile*		fout				= new TFile ("verification3.root", "recreate");	
 
 	// This section of the code will load the .txt file and start parsing the header with settings/info
 
@@ -66,19 +68,19 @@ int verification3Parser (TString testDataFilePath = "m115-test3-1.txt") {
 	
 	// initialize histogram arrays outside of any loops to declare them in the global scobe
 	
-	TH1I* Wires           [3][8][numberOfReps][2]; 	// The first dimension is number of chamber (only for wires), second is number of element (wire or pad)
-	TH1I* Pads    [numberOfPads][numberOfReps][2];	// third is number of repetitions and fourth indexes polarity of signal (0 - positive, 1 - negative
+	TH1D* Wires           [3][8][numberOfReps][2]; 	// The first dimension is number of chamber (only for wires), second is number of element (wire or pad)
+	TH1D* Pads    [numberOfPads][numberOfReps][2];	// third is number of repetitions and fourth indexes polarity of signal (0 - positive, 1 - negative
 	
 	for (Int_t a = 0; a < numberOfReps; a++) { 			//loop over 100 reps
 		for (Int_t b = 0; b < 2; b++) {		            //loop over 2 polarities
 			
 			for (Int_t c = 0; c < numberOfPads; c++) {	//loop over 9 pads
-				Pads[c][a][b] = new TH1I (Form("Pads_nr%i_rep%i_polar%i", c+1, a+1, b), Form("Pads_nr%i_rep%i_polar%i", c+1, a+1, b), bins, 0.5, bins+0.5);
+				Pads[c][a][b] = new TH1D (Form("Pads_nr%i_rep%i_polar%i", c+1, a+1, b), Form("Pads_nr%i_rep%i_polar%i", c+1, a+1, b), bins, 0.5, bins+0.5);
 			}
 			
 			for (Int_t c = 0; c < 3; c++) {				//loop over 3 chambers
 				for (Int_t d = 0; d < 8; d++) {			//loop over 8 wires
-					Wires[c][d][a][b] = new TH1I (Form("Wires_chamber%i_nr%i_rep%i_polar%i", c+1, d+1, a+1, b), Form("Wires_chamber%i_nr%i_rep%i_polar%i", c+1, d+1, a+1, b), bins, 0.5, bins+0.5);
+					Wires[c][d][a][b] = new TH1D (Form("Wires_chamber%i_nr%i_rep%i_polar%i", c+1, d+1, a+1, b), Form("Wires_chamber%i_nr%i_rep%i_polar%i", c+1, d+1, a+1, b), bins, 0.5, bins+0.5);
 				}
 			}					
 		}
@@ -132,10 +134,26 @@ int verification3Parser (TString testDataFilePath = "m115-test3-1.txt") {
 			
 			binNumber++;
 			
-			if (binNumber > bins) {
-				if (numberOfChamber == 3 && numberOfWire == numberOfPads - 1 && numberOfRep==numberOfReps - 1) {
+			if (binNumber > bins) { //if we just finished filling a pair of histograms
+				
+				if (numberOfChamber == 3 && numberOfWire == numberOfPads - 1 && numberOfRep==numberOfReps - 1) { //check whether the file is over
 					cout << "File read correctly -- terminating the program." << endl;
 					break;
+				}
+				
+				//save the given pair of histograms
+				
+				if (numberOfChamber == 3) { 					//this is a pad
+				
+				Pads[numberOfWire][numberOfRep][0]->Write();
+				Pads[numberOfWire][numberOfRep][1]->Write();
+				}
+			
+				else { 											//this is a wire
+	
+					Wires[numberOfChamber][numberOfWire][numberOfRep][0]->Write();
+					Wires[numberOfChamber][numberOfWire][numberOfRep][1]->Write();
+				
 				}
 				getline(inputfile, line);    				//omit one line after reaching the last value
 			}		
@@ -144,6 +162,8 @@ int verification3Parser (TString testDataFilePath = "m115-test3-1.txt") {
 	}
 	
 	inputfile.close();
-	return 0;
+	fout->Close();
+	return to_string(numberOfPads) + " " + to_string(numberOfReps);
+	
 
 } 
