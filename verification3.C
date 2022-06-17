@@ -31,13 +31,13 @@ void verification3 (Bool_t parseFile = false) {
 	TFile*	fout		= new TFile ("verification3results.root", "recreate");
 	
 	// setup
-	TH1D* 	ProbeAvg;
-	Int_t	selectChamber 	= 0;
-	Int_t	selectWire		= 0;
-	Int_t	numberOfPads, numberOfReps;
-	TH1D* 	PolarAssymetry = new TH1D ("PolarAssymetry", Form("Relative polar assymetry for wire %i in chamber %i; rel. assymetry (%%)", selectWire+1, selectChamber+1), 200, -200, 200);
-	TH1D* 	TotalAssymetry = new TH1D ("TotalAssymetry", Form("Relative total assymetry for wire %i in chamber %i; rel. assymetry (%%)", selectWire+1, selectChamber+1), 200, 0, 300);
 	
+	Bool_t	debugPrintIntegrals = true;
+	Int_t	numberOfPads, numberOfReps;
+	
+	TH1D* 	ProbeAvg[30];
+	TH1D* 	PolarAssymetry[30];
+	TH1D* 	TotalAssymetry[30];
 	
 	// this section of the code will reconstruct the key settings read from the .txt file
 	// it comes as a string with structure "[numberOfPads] [numberOfReps]"
@@ -69,41 +69,53 @@ void verification3 (Bool_t parseFile = false) {
 	}
 	
 	// do the actual verification with the histograms
-	// first approach: add "+" signal to "-" signal, average that result over all reps
-	// how to evaluate this assymetry?
-	// calculate the integral of difference (sensitive to sign) and integral of absolute difference (indifferent to sign). 
+	// first approach: add "+" signal to "-" signal - this should roughly correspond to the noise of the two channels
+	// how to evaluate this noise assymetry?
+	// calculate the "polar" integral (sensitive to sign) and "total" integral (indifferent to sign). 
 	// the first integral will detect systematic preference of one polarity but will be blind to any assymetries that cancel out on average
 	// or cancel out periodically - for example even an obvious sine wave would be overlooked by this measure
 	// the second approach will measure the overall noise, even if it cancels out with regard to polarity
 	// we expect the first value to be very close to zero and the second value to be below some percentage (10% ?).
 	
-	if (selectChamber == 0 || selectChamber == 1 || selectChamber == 2) {
+	for (Int_t chamber=0; chamber<3; chamber++) {
+		for (Int_t wire=0; wire<8; wire++) {
+			
+			Int_t index = chamber*10 + wire + 1;
+		
+			ProbeAvg[index] 		= (TH1D*) Wires[chamber][wire][0][0]->Clone(Form("ProbeAvg_%i", index));
+			PolarAssymetry[index] = new TH1D (Form("PolarAssymetry_%i", index), Form("Relative polar assymetry for wire %i in chamber %i; rel. assymetry (%%)", wire+1, chamber+1), 200, -200, 200);
+			TotalAssymetry[index] = new TH1D (Form("TotalAssymetry_%i", index), Form("Relative total assymetry for wire %i in chamber %i; rel. assymetry (%%)", wire+1, chamber+1), 200, 0, 300);
 	
-		ProbeAvg 		= (TH1D*) Wires[selectChamber][selectWire][0][0]->Clone("ProbeAvg");
-		ProbeAvg->Reset();
-		ProbeAvg->SetTitle(Form("Average profile of positive + negative for wire %i in chamber %i; channel number; I (uA)", selectWire+1, selectChamber+1));
-		
-		for (Int_t i=0; i<numberOfReps; i++) { // loop over all reps, for wires
-		
-			Double_t averageIntegral = 0.5 * (Wires[selectChamber][selectWire][i][0]->Integral("width") - Wires[selectChamber][selectWire][i][1]->Integral("width"));
-		
-			TH1D* ProbeTemp = (TH1D*) Wires[selectChamber][selectWire][i][0]->Clone("ProbeTemp");
-			ProbeTemp			->Add(Wires[selectChamber][selectWire][i][1]);
+			ProbeAvg[index]->Reset();
+			ProbeAvg[index]->SetTitle(Form("Average profile of positive + negative for wire %i in chamber %i; channel number; I (uA)", wire+1, chamber+1));
 			
-			TotalAssymetry->Fill(100 * smartIntegral(ProbeTemp, "total") / averageIntegral);
-			PolarAssymetry->Fill(100 * smartIntegral(ProbeTemp, "polar") / averageIntegral);
-			ProbeAvg			->Add(ProbeTemp, 1./numberOfReps);
+			for (Int_t i=0; i<numberOfReps; i++) { // loop over all reps, for wires
 			
-			cout << "+ integral: " << Wires[selectChamber][selectWire][i][0]->Integral("width") << ", - integral: " << Wires[selectChamber][selectWire][i][1]->Integral("width") << ". avgInt: " << averageIntegral << endl;
-			cout << "polar integral: " << smartIntegral(ProbeTemp, "polar") << ", total integral: " << smartIntegral(ProbeTemp, "total") << endl;
+				Double_t averageIntegral = 0.5 * (Wires[chamber][wire][i][0]->Integral("width") - Wires[chamber][wire][i][1]->Integral("width"));
+			
+				TH1D* ProbeTemp = (TH1D*) Wires[chamber][wire][i][0]->Clone("ProbeTemp");
+				ProbeTemp			->Add(Wires[chamber][wire][i][1]);
+				
+				TotalAssymetry[index]->Fill(100 * smartIntegral(ProbeTemp, "total") / averageIntegral);
+				PolarAssymetry[index]->Fill(100 * smartIntegral(ProbeTemp, "polar") / averageIntegral);
+				ProbeAvg[index]			->Add(ProbeTemp, 1./numberOfReps);
+				
+				if (debugPrintIntegrals) {
+					cout << i << ", positive: " << Wires[chamber][wire][i][0]->Integral("width") << ", negative: " << Wires[chamber][wire][i][1]->Integral("width") << ". average: " << averageIntegral << endl;
+					cout << i << ", polar: " << smartIntegral(ProbeTemp, "polar") << ", relative value is : " << 100 * smartIntegral(ProbeTemp, "polar") / averageIntegral << " %" << endl;
+					cout << i << ", total: " << smartIntegral(ProbeTemp, "total") << ", relative value is : " << 100 * smartIntegral(ProbeTemp, "total") / averageIntegral << " %" << endl;
+				}
+			}
+			
+			ProbeAvg[index]->Write();
+			TotalAssymetry[index]->Write();
+			PolarAssymetry[index]->Write();
 			
 		}
-		
-		ProbeAvg->Write();
-		TotalAssymetry->Write();
-		PolarAssymetry->Write();
-		
 	}
 	
+	//this will generate the overall report histograms
+	
 	fout->Close();
+	
 }
