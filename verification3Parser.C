@@ -8,6 +8,7 @@ string verification3Parser (TString testDataFilePath = "m115-test3-1.txt") {
 	const Bool_t debugCountLines		= false;			// this wil print every counter value
 	const Bool_t debugPrintPadsReps		= false;			// this wil print read words and values of NPads and NReps
 	
+	const Int_t repsToPrint		= 100;						// this will print every 'repsToPrint'-th rep during parsing
 	const Int_t timeout			= 3000;
 	const Int_t bins			= 500; 						// number of bins in each histogram
 	
@@ -104,14 +105,14 @@ string verification3Parser (TString testDataFilePath = "m115-test3-1.txt") {
 			words.push_back(word);
 		}
 		
-		if (words[0] == "Komora/pad") {
-			
-			cout << line << endl;        					//get the line with current number of chamber, wire and repetition
+		if (words[0] == "Komora/pad") {	
 			
 			numberOfChamber 	= stoi(words[1]) - 1;		//-1 to make it OK with C++ array numbering convention
 			numberOfWire	  	= stoi(words[3]) - 1;		
 			numberOfRep		  	= stoi(words[5]) - 1;		
 			binNumber		  	= 1;		
+			
+			cout << line << "\n";   //print the line with current number of chamber, wire and repetition
 			
 			getline(inputfile, line);    					//and omit one line
 			
@@ -137,7 +138,7 @@ string verification3Parser (TString testDataFilePath = "m115-test3-1.txt") {
 			if (binNumber > bins) { //if we just finished filling a pair of histograms
 				
 				if (numberOfChamber == 3 && numberOfWire == numberOfPads - 1 && numberOfRep==numberOfReps - 1) { //check whether the file is over
-					cout << "File read correctly -- terminating the program." << endl;
+					cout << "File read correctly -- terminating the parser." << endl;
 					break;
 				}
 				

@@ -5,12 +5,12 @@ Double_t smartIntegral (TH1* hist, TString option = "total") {
 	Double_t sum;
 	if (option=="total" || option=="polar") {
 		
-		TAxis* 	xAxis = hist->GetXaxis();
-		Int_t	nBins = xAxis->GetNbins();
+		//TAxis* 	xAxis = hist->GetXaxis();
+		Int_t	nBins = hist->GetXaxis()->GetNbins();
 		
 		for (Int_t i=1; i<=nBins; i++) {
 			
-			Double_t binValue = 1.0 * hist->GetBinContent(i) / xAxis->GetBinWidth(i);
+			Double_t binValue = 1.0 * hist->GetBinContent(i) / nBins;
 			if (option == "total") binValue = TMath::Abs(binValue);
 			sum += binValue;
 			
@@ -20,24 +20,29 @@ Double_t smartIntegral (TH1* hist, TString option = "total") {
 	return sum;
 } 
 
-void verification3 (Bool_t parseFile = false) {
+void verification3 (Bool_t parseFile = true) {
+	
+
 
 	string setString;
 	if (!parseFile) setString = "9 100"; // settings need to be manually set if they are not auto accessed by parsing the file
 
 	// parse .txt into .root if needed, open .root file 
 	if (parseFile) setString = verification3Parser("m115-test3-1.txt");
+	
+	cout << "Starting the analysis section." << endl;
+	
 	TFile*	fin			= new TFile ("verification3.root", "read");
 	TFile*	fout		= new TFile ("verification3results.root", "recreate");
 	
 	// setup
-	
-	Bool_t	debugPrintIntegrals = true;
+	Bool_t	debugPrintIntegrals = false;
 	Int_t	numberOfPads, numberOfReps;
 	
 	TH1D* 	ProbeAvg[30];
 	TH1D* 	PolarAssymetry[30];
 	TH1D* 	TotalAssymetry[30];
+	TH1D* 	CurrentProfile[30];
 	
 	// this section of the code will reconstruct the key settings read from the .txt file
 	// it comes as a string with structure "[numberOfPads] [numberOfReps]"
@@ -49,6 +54,8 @@ void verification3 (Bool_t parseFile = false) {
 	numberOfReps = stoi(reps);
 	
 	// initialize histogram arrays, get them from the TFile
+	
+	cout << "Loading parsed histograms - this may take a while..." << endl;
 	
 	TH1D* Wires           [3][8][numberOfReps][2]; 	// The first dimension is number of chamber (only for wires), second is number of element (wire or pad)
 	TH1D* Pads    [numberOfPads][numberOfReps][2];	// third is number of repetitions and fourth indexes polarity of signal (0 - positive, 1 - negative
@@ -69,13 +76,9 @@ void verification3 (Bool_t parseFile = false) {
 	}
 	
 	// do the actual verification with the histograms
-	// first approach: add "+" signal to "-" signal - this should roughly correspond to the noise of the two channels
-	// how to evaluate this noise assymetry?
-	// calculate the "polar" integral (sensitive to sign) and "total" integral (indifferent to sign). 
-	// the first integral will detect systematic preference of one polarity but will be blind to any assymetries that cancel out on average
-	// or cancel out periodically - for example even an obvious sine wave would be overlooked by this measure
-	// the second approach will measure the overall noise, even if it cancels out with regard to polarity
-	// we expect the first value to be very close to zero and the second value to be below some percentage (10% ?).
+	
+	cout << "Beginning the analysis loop - this may take a while..." << endl;
+
 	
 	for (Int_t chamber=0; chamber<3; chamber++) {
 		for (Int_t wire=0; wire<8; wire++) {
@@ -83,33 +86,51 @@ void verification3 (Bool_t parseFile = false) {
 			Int_t index = chamber*10 + wire + 1;
 		
 			ProbeAvg[index] 		= (TH1D*) Wires[chamber][wire][0][0]->Clone(Form("ProbeAvg_%i", index));
-			PolarAssymetry[index] = new TH1D (Form("PolarAssymetry_%i", index), Form("Relative polar assymetry for wire %i in chamber %i; rel. assymetry (%%)", wire+1, chamber+1), 200, -200, 200);
-			TotalAssymetry[index] = new TH1D (Form("TotalAssymetry_%i", index), Form("Relative total assymetry for wire %i in chamber %i; rel. assymetry (%%)", wire+1, chamber+1), 200, 0, 300);
+			PolarAssymetry[index] = new TH1D (Form("PolarAssymetry_%i", index), Form("Relative polar assymetry for wire %i in chamber %i; rel. assymetry (%%)", wire+1, chamber+1), 40, -20, 20);
+			TotalAssymetry[index] = new TH1D (Form("TotalAssymetry_%i", index), Form("Relative total assymetry for wire %i in chamber %i; rel. assymetry (%%)", wire+1, chamber+1), 30, 0, 30);
+			CurrentProfile[index] = new TH1D (Form("CurrentProfile_%i", index), Form("Integral of current (charge deposit) profile for wire %i in chamber %i ; current integral [a. u. of charge]", wire+1, chamber+1), 100, 0, 100000);
 	
+			// create a directory for individual profiles in the TFile
+			fout->cd();
+			TDirectory* IndividualProfileDir = fout->mkdir(Form("index %i single profiles", index));
+			IndividualProfileDir->Write();
+			IndividualProfileDir->cd();
+			
 			ProbeAvg[index]->Reset();
 			ProbeAvg[index]->SetTitle(Form("Average profile of positive + negative for wire %i in chamber %i; channel number; I (uA)", wire+1, chamber+1));
 			
 			for (Int_t i=0; i<numberOfReps; i++) { // loop over all reps, for wires
 			
-				Double_t averageIntegral = 0.5 * (Wires[chamber][wire][i][0]->Integral("width") - Wires[chamber][wire][i][1]->Integral("width"));
-			
-				TH1D* ProbeTemp = (TH1D*) Wires[chamber][wire][i][0]->Clone("ProbeTemp");
-				ProbeTemp			->Add(Wires[chamber][wire][i][1]);
+				// Get positive integral before scaling - to create the current deposit profile 
+				Double_t positiveIntegral = Wires[chamber][wire][i][0]->Integral("width");
+				CurrentProfile[index]->Fill(positiveIntegral);
 				
-				TotalAssymetry[index]->Fill(100 * smartIntegral(ProbeTemp, "total") / averageIntegral);
-				PolarAssymetry[index]->Fill(100 * smartIntegral(ProbeTemp, "polar") / averageIntegral);
+				Wires[chamber][wire][i][0]->Scale(1./Wires[chamber][wire][i][0]->GetMaximum());
+				Wires[chamber][wire][i][1]->Scale((-1.)/Wires[chamber][wire][i][1]->GetMinimum());
+				
+			
+				TH1D* ProbeTemp = (TH1D*) Wires[chamber][wire][i][0]->Clone(Form("ProbeTemp_index%i_rep%i", index, i));
+				ProbeTemp			->Add(Wires[chamber][wire][i][1]);
+			
+				ProbeTemp->Write();
+				
+				Double_t totalIntegral = 100 * smartIntegral(ProbeTemp, "total");
+				Double_t polarIntegral = 100 * smartIntegral(ProbeTemp, "polar");
+				
+				TotalAssymetry[index]->Fill(totalIntegral);
+				PolarAssymetry[index]->Fill(polarIntegral);
 				ProbeAvg[index]			->Add(ProbeTemp, 1./numberOfReps);
 				
 				if (debugPrintIntegrals) {
-					cout << i << ", positive: " << Wires[chamber][wire][i][0]->Integral("width") << ", negative: " << Wires[chamber][wire][i][1]->Integral("width") << ". average: " << averageIntegral << endl;
-					cout << i << ", polar: " << smartIntegral(ProbeTemp, "polar") << ", relative value is : " << 100 * smartIntegral(ProbeTemp, "polar") / averageIntegral << " %" << endl;
-					cout << i << ", total: " << smartIntegral(ProbeTemp, "total") << ", relative value is : " << 100 * smartIntegral(ProbeTemp, "total") / averageIntegral << " %" << endl;
+					cout << i << "; polar: " << polarIntegral << " %; total: " << totalIntegral << " %\n";
 				}
 			}
 			
+			fout->cd();
 			ProbeAvg[index]->Write();
 			TotalAssymetry[index]->Write();
 			PolarAssymetry[index]->Write();
+			CurrentProfile[index]->Write();
 			
 		}
 	}
